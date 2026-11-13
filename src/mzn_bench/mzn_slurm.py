@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, fields
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, NoReturn, Optional
+
 import minizinc
 from ruamel.yaml import YAML
 
@@ -40,6 +41,7 @@ class Configuration:
     other_flags: Dict[str, Any] = field(default_factory=dict)
     extra_data: Dict[str, Any] = field(default_factory=dict)
     extra_model_files: List[Path] = field(default_factory=list)
+    save_comment: bool = False
     stage: Optional[bool] = None
 
     def to_dict(self):
@@ -214,6 +216,7 @@ async def run_instance(
     stat_base,
     sol_file,
     stats_file,
+    comment_file,
     stage_time=None,
 ):
     statistics = stat_base.copy()
@@ -228,7 +231,12 @@ async def run_instance(
         assert len(model_files) > 0
         model = minizinc.Model(model_files + config.extra_model_files)
         model.output_type = dict
-        instance = minizinc.Instance(config.solver, model, driver)
+        instance = minizinc.Instance(
+            config.solver,
+            model,
+            driver,
+            save_comment=config.save_comment,
+        )
         for path in data:
             instance.add_file(path, parse_data=False)
         is_satisfaction = instance.method == minizinc.Method.SATISFY
@@ -284,6 +292,9 @@ async def run_instance(
 
     with open(stats_file, "w") as file:
         yaml.dump(statistics, file)
+
+    with open(comment_file, "w") as file:
+        file.writelines(instance.solving_comments)
 
 
 # Installations that are not a self-contained MiniZinc bundle
@@ -440,6 +451,7 @@ def main(instances, output_dir):
                 stat_base,
                 result_dir / f"{filename}_sol.yml",
                 result_dir / f"{filename}_stats.yml",
+                result_dir / f"{filename}_comment.txt",
                 stage_time,
             )
         )
